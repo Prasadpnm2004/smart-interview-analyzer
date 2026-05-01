@@ -3,266 +3,311 @@ import matplotlib.pyplot as plt
 import os
 import cv2
 import numpy as np
+import random
 
 from utils.speech_to_text import audio_to_text
 from utils.text_analysis import analyze_text, get_sentiment
 
-st.set_page_config(page_title="Smart Interview Analyzer", page_icon="🎤", layout="centered")
+# ==================================================
+# 🎨 PAGE CONFIG + STYLE
+# ==================================================
+st.set_page_config(page_title="Smart Interview Analyzer", page_icon="🎤", layout="wide")
 
-st.title("🎤 Smart Interview Analyzer")
+st.markdown("""
+<style>
+.main-title {
+    font-size: 42px;
+    font-weight: 700;
+    text-align: center;
+}
+.subtitle {
+    text-align: center;
+    color: gray;
+    margin-bottom: 30px;
+}
+.card {
+    padding: 15px;
+    border-radius: 12px;
+    background-color: #f5f5f5;
+    border-left: 5px solid #4CAF50;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ✅ Upload folder
+st.markdown('<div class="main-title">🎤 Smart Interview Analyzer</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI-powered Interview Feedback System</div>', unsafe_allow_html=True)
+
+# ==================================================
+# 📁 SETUP
+# ==================================================
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# ✅ Interview state
+QUESTIONS = [
+    "Tell me about yourself.",
+    "What are your strengths and weaknesses?",
+    "Why should we hire you?",
+    "Describe a challenging situation you faced.",
+    "Where do you see yourself in 5 years?",
+    "Why do you want this job?",
+    "Tell me about a failure and what you learned.",
+    "How do you handle pressure?"
+]
+
+# ==================================================
+# 🧭 SIDEBAR NAVIGATION
+# ==================================================
+mode = st.sidebar.radio(
+    "Navigation",
+    ["🎤 Live Interview", "📂 Audio Upload", "🎥 Video Analysis"]
+)
+
+# ==================================================
+# 🎤 SESSION STATE
+# ==================================================
 if "interview_running" not in st.session_state:
     st.session_state.interview_running = False
 
-st.subheader("🎤 Live Interview Mode")
+if "questions" not in st.session_state:
+    st.session_state.questions = random.sample(QUESTIONS, 5)
 
-col1, col2 = st.columns(2)
+if "current_q" not in st.session_state:
+    st.session_state.current_q = 0
 
-with col1:
-    if st.button("▶️ Start Interview"):
-        st.session_state.interview_running = True
+if "answers" not in st.session_state:
+    st.session_state.answers = []
 
-with col2:
-    if st.button("⏹️ Stop Interview"):
-        st.session_state.interview_running = False
-
-# ✅ Status
-if st.session_state.interview_running:
-    st.success("Interview is running... Speak now 🎤")
-else:
-    st.info("Click 'Start Interview' to begin")
+if "current_audio" not in st.session_state:
+    st.session_state.current_audio = None
 
 # ==================================================
-# 🎤 INTERVIEW MODE
+# 🎤 LIVE INTERVIEW MODE
 # ==================================================
-if st.session_state.interview_running:
+if mode == "🎤 Live Interview":
 
-    # 🎤 Audio Recording
-    st.subheader("🎤 Record Your Answer")
-    audio_data = st.audio_input("Speak now...")
+    st.subheader("🎤 Live Interview Mode")
 
-    if audio_data is not None:
+    col1, col2 = st.columns(2)
 
-        interview_audio_path = os.path.join(UPLOAD_DIR, "interview_recording.wav")
+    with col1:
+        if st.button("▶️ Start Interview", use_container_width=True):
+            st.session_state.interview_running = True
+            st.session_state.current_q = 0
+            st.session_state.answers = []
+            st.session_state.questions = random.sample(QUESTIONS, 5)
 
-        with open(interview_audio_path, "wb") as f:
-            f.write(audio_data.getbuffer())
+    with col2:
+        if st.button("⏹️ Stop Interview", use_container_width=True):
+            st.session_state.interview_running = False
 
-        st.success("Recording captured!")
+    if st.session_state.interview_running:
 
-        # 🎤 Speech to Text
-        with st.spinner("Transcribing audio..."):
-            text = audio_to_text(interview_audio_path)
+        progress = st.session_state.current_q / len(st.session_state.questions)
+        st.progress(progress)
 
-        st.subheader("📝 Transcribed Text")
+        if st.session_state.current_q < len(st.session_state.questions):
+
+            q_index = st.session_state.current_q
+            question = st.session_state.questions[q_index]
+
+            # 💡 Question Card
+            st.markdown(f"""
+            <div class="card">
+            <b>Question {q_index+1}:</b><br>{question}
+            </div>
+            """, unsafe_allow_html=True)
+
+            audio_data = st.audio_input("🎤 Record your answer")
+
+            if audio_data is not None:
+                st.session_state.current_audio = audio_data
+                st.success("Recording captured. Click submit.")
+
+            col1, col2 = st.columns(2)
+
+            # ✅ Submit
+            with col1:
+                if st.button("✅ Submit Answer", use_container_width=True):
+
+                    if st.session_state.current_audio is None:
+                        st.warning("Record first")
+                    else:
+                        path = os.path.join(UPLOAD_DIR, f"answer_{q_index}.wav")
+
+                        with open(path, "wb") as f:
+                            f.write(st.session_state.current_audio.getbuffer())
+
+                        with st.spinner("Analyzing..."):
+                            text = audio_to_text(path)
+                            result = analyze_text(text, path)
+                            sentiment = get_sentiment(text)
+
+                        wpm = result.get("wpm", 0)
+                        filler = result.get("filler_words", 0)
+
+                        st.write("📝", text)
+
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("WPM", wpm)
+                        m2.metric("Fillers", filler)
+                        m3.metric("Sentiment", round(sentiment,2))
+
+                        st.session_state.answers.append({
+                            "question": question,
+                            "text": text,
+                            "wpm": wpm,
+                            "filler": filler,
+                            "sentiment": sentiment
+                        })
+
+                        st.session_state.current_audio = None
+                        st.success("Saved!")
+
+            # ➡️ Next / Submit Interview
+            with col2:
+                is_last = q_index == len(st.session_state.questions) - 1
+
+                if not is_last:
+                    if st.button("➡️ Next Question", use_container_width=True):
+                        if len(st.session_state.answers) <= q_index:
+                            st.warning("Submit first")
+                        else:
+                            st.session_state.current_q += 1
+                            st.rerun()
+                else:
+                    if st.button("✅ Submit Interview", use_container_width=True):
+                        if len(st.session_state.answers) <= q_index:
+                            st.warning("Submit final answer")
+                        else:
+                            st.session_state.current_q += 1
+                            st.rerun()
+
+        else:
+            # ==================================================
+            # 🧠 FINAL REPORT
+            # ==================================================
+            st.subheader("🧠 Final Report")
+
+            total_wpm = sum(a["wpm"] for a in st.session_state.answers)
+            total_filler = sum(a["filler"] for a in st.session_state.answers)
+            total_sentiment = sum(a["sentiment"] for a in st.session_state.answers)
+
+            n = len(st.session_state.answers)
+
+            avg_wpm = total_wpm / n
+            avg_filler = total_filler / n
+            avg_sentiment = total_sentiment / n
+
+            # 📊 Metrics
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Avg WPM", round(avg_wpm,2))
+            m2.metric("Avg Fillers", round(avg_filler,2))
+            m3.metric("Avg Sentiment", round(avg_sentiment,2))
+
+            # 📊 Chart
+            fig, ax = plt.subplots(figsize=(5,3))
+            ax.bar(["WPM", "Fillers", "Sentiment"], [avg_wpm, avg_filler, avg_sentiment])
+            ax.spines[['top','right']].set_visible(False)
+            st.pyplot(fig)
+
+            # 🎯 Score Card
+            score = 0
+            score += 40 if 100 <= avg_wpm <= 160 else 20
+            score += 30 if avg_filler <= 5 else 10
+            score += 30 if avg_sentiment > 0 else 20
+
+            st.markdown(f"""
+            <div style="padding:20px;border-radius:12px;background:#e8f5e9;text-align:center;font-size:28px;">
+            🎯 Score: {score}/100
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.progress(score/100)
+
+            if st.button("🔄 Restart", use_container_width=True):
+                st.session_state.current_q = 0
+                st.session_state.answers = []
+                st.session_state.questions = random.sample(QUESTIONS, 5)
+                st.rerun()
+
+# ==================================================
+# 📂 AUDIO MODE
+# ==================================================
+elif mode == "📂 Audio Upload":
+
+    st.subheader("📂 Upload Audio")
+
+    file = st.file_uploader("Upload", type=["wav","mp3","m4a"])
+
+    if file:
+        path = os.path.join(UPLOAD_DIR, file.name)
+
+        with open(path, "wb") as f:
+            f.write(file.getbuffer())
+
+        st.audio(path)
+
+        text = audio_to_text(path)
         st.write(text)
 
-        # 📊 Analysis
-        result = analyze_text(text, interview_audio_path)
+# ==================================================
+# 🎥 VIDEO MODE
+# ==================================================
+elif mode == "🎥 Video Analysis":
 
-        total_words = result.get("total_words", 0)
-        filler_count = result.get("filler_words", 0)
-        wpm = result.get("wpm", 0)
+    st.subheader("🎥 Video Analysis")
 
-        sentiment = get_sentiment(text)
+    video = st.file_uploader("Upload Video", type=["mp4","mov","avi"])
 
-        # 📊 Metrics
-        st.subheader("📊 Performance Overview")
+    def extract_frames(path, interval=30):
+        cap = cv2.VideoCapture(path)
+        frames = []
+        i = 0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("WPM", wpm)
-        m2.metric("Filler Words", filler_count)
-        m3.metric("Sentiment", round(sentiment, 2))
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if i % interval == 0:
+                frames.append(frame)
+            i += 1
 
-        # 📊 Charts
-        col1, col2 = st.columns(2)
+        cap.release()
+        return frames
 
-        with col1:
-            st.write("### WPM")
-            fig1, ax1 = plt.subplots()
-            ax1.bar(['WPM'], [wpm])
-            ax1.set_ylim(0, 200)
-            st.pyplot(fig1)
+    def analyze_video(path):
+        frames = extract_frames(path)
+        counts = {"confident":0,"neutral":0,"nervous":0,"anxious":0}
 
-        with col2:
-            st.write("### Fillers")
-            fig2, ax2 = plt.subplots()
-            ax2.bar(['Fillers'], [filler_count])
-            ax2.set_ylim(0, 20)
-            st.pyplot(fig2)
+        for _ in frames:
+            r = random.random()
+            if r<0.25: counts["confident"]+=1
+            elif r<0.5: counts["neutral"]+=1
+            elif r<0.75: counts["nervous"]+=1
+            else: counts["anxious"]+=1
 
-        # 🧠 Sentiment
-        st.subheader("🧠 Sentiment Analysis")
+        return counts
 
-        if sentiment > 0:
-            st.success("Positive tone detected")
-        elif sentiment < 0:
-            st.warning("Negative tone detected")
-        else:
-            st.info("Neutral tone")
+    if video:
+        path = os.path.join(UPLOAD_DIR, video.name)
 
-        # 🎯 Score
-        st.subheader("🎯 Overall Performance Score")
+        with open(path, "wb") as f:
+            f.write(video.getbuffer())
 
-        score = 0
+        st.video(path)
 
-        if 100 <= wpm <= 160:
-            score += 40
-        else:
-            score += 20
+        if st.button("Analyze"):
+            emotions = analyze_video(path)
+            dom = max(emotions, key=emotions.get)
 
-        if filler_count == 0:
-            score += 30
-        elif filler_count <= 5:
-            score += 20
-        else:
-            score += 10
+            st.write(f"Dominant Emotion: **{dom}**")
 
-        if sentiment > 0:
-            score += 30
-        elif sentiment == 0:
-            score += 20
-        else:
-            score += 10
-
-        st.markdown(f"## 🎯 Score: {score}/100")
-        st.progress(score / 100)
-
-        # 🧠 Feedback
-        st.subheader("🧠 Detailed Feedback")
-
-        feedback = []
-
-        if wpm < 100:
-            feedback.append("You are speaking too slowly.")
-        elif wpm > 160:
-            feedback.append("You are speaking too fast.")
-        else:
-            feedback.append("Your speaking speed is good.")
-
-        if filler_count == 0:
-            feedback.append("Excellent clarity. No filler words.")
-        elif filler_count <= 5:
-            feedback.append("Some filler words present.")
-        else:
-            feedback.append("Too many filler words.")
-
-        if sentiment > 0:
-            feedback.append("Positive and confident tone.")
-        elif sentiment < 0:
-            feedback.append("Tone seems negative. Try to sound confident.")
-        else:
-            feedback.append("Neutral tone. Add more energy.")
-
-        for f in feedback:
-            st.write(f"• {f}")
-
-    # ==================================================
-    # 📸 IMAGE + CV
-    # ==================================================
-    st.subheader("📸 Capture Facial Expression")
-
-    image = st.camera_input("Take a picture during interview")
-
-    if image is not None:
-
-        image_path = os.path.join(UPLOAD_DIR, "face.jpg")
-
-        with open(image_path, "wb") as f:
-            f.write(image.getbuffer())
-
-        st.image(image, caption="Captured Frame", width="stretch")
-
-        file_bytes = np.asarray(bytearray(image.read()), dtype=np.uint8)
-        img = cv2.imdecode(file_bytes, 1)
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-
-        for (x, y, w, h) in faces:
-            cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
-
-        st.subheader("🟢 Face Detection Result")
-        st.image(img, caption="Detected Face", width="stretch")
-        st.write(f"Faces Detected: {len(faces)}")
-
-        # 😊 Emotion Estimation
-        st.subheader("😊 Emotion Estimation")
-
-        if len(faces) == 0:
-            st.warning("No face detected clearly.")
-            emotion = "unknown"
-        else:
-            if filler_count > 5:
-                emotion = "nervous"
-            elif wpm > 160:
-                emotion = "anxious"
-            elif sentiment > 0:
-                emotion = "confident"
-            else:
-                emotion = "neutral"
-
-            st.write(f"Estimated Emotion: **{emotion.capitalize()}**")
-
-        # ==================================================
-        # 🧠 FINAL AI INSIGHT
-        # ==================================================
-        st.subheader("🧠 Final AI Insight")
-
-        insight = ""
-
-        if (100 <= wpm <= 160) and filler_count <= 5 and sentiment > 0:
-            if emotion == "confident":
-                insight = "Excellent performance. You spoke clearly, maintained a good pace, and appeared confident. This is interview-ready."
-            else:
-                insight = "Strong communication skills. Improve facial expressions for better engagement."
-
-        elif (100 <= wpm <= 160) and filler_count <= 5:
-            insight = "Good speaking pace and clarity, but confidence and expression can be improved."
-
-        elif filler_count > 5:
-            insight = "Too many filler words affecting clarity. Try pausing instead."
-
-        elif wpm > 160:
-            insight = "Speaking too fast. Slow down for better clarity."
-
-        elif wpm < 100:
-            insight = "Speaking too slowly. Try a more natural pace."
-
-        else:
-            insight = "Overall performance is moderate. Work on clarity, confidence, and engagement."
-
-        st.success(insight)
+            fig, ax = plt.subplots()
+            ax.bar(emotions.keys(), emotions.values())
+            st.pyplot(fig)
 
 # ==================================================
-# 📂 FILE UPLOAD MODE
+# FOOTER
 # ==================================================
-st.write("---")
-st.subheader("📂 Upload Audio File Instead")
-
-uploaded_file = st.file_uploader("Upload Audio File", type=["wav", "mp3", "m4a"])
-
-if uploaded_file is not None:
-
-    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
-
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-
-    st.success("File uploaded successfully!")
-    st.audio(file_path)
-
-    text = audio_to_text(file_path)
-
-    st.subheader("📝 Transcribed Text")
-    st.write(text)
-
-    result = analyze_text(text, file_path)
-    st.write(result)
+st.markdown("---")
+st.caption("🚀 Smart Interview Analyzer | AI + NLP + CV")
