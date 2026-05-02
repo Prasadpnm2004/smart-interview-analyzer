@@ -26,10 +26,11 @@ st.markdown("""
     margin-bottom: 30px;
 }
 .card {
-    padding: 15px;
+   padding: 15px;
     border-radius: 12px;
-    background-color: #f5f5f5;
+    background-color: rgba(255,255,255,0.06);
     border-left: 5px solid #4CAF50;
+    color: var(--text-color);
 }
 </style>
 """, unsafe_allow_html=True)
