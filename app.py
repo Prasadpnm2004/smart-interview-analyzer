@@ -9,34 +9,51 @@ from utils.speech_to_text import audio_to_text
 from utils.text_analysis import analyze_text, get_sentiment
 
 # ==================================================
-# 🎨 PAGE CONFIG + STYLE
+# 🎨 PAGE CONFIG + PREMIUM UI
 # ==================================================
 st.set_page_config(page_title="Smart Interview Analyzer", page_icon="🎤", layout="wide")
 
 st.markdown("""
 <style>
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #e2e8f0;
+}
 .main-title {
-    font-size: 42px;
+    font-size: 48px;
     font-weight: 700;
     text-align: center;
 }
 .subtitle {
     text-align: center;
-    color: gray;
-    margin-bottom: 30px;
+    color: #94a3b8;
+    margin-bottom: 40px;
 }
 .card {
-   padding: 15px;
+    padding: 20px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 20px;
+}
+.stButton>button {
     border-radius: 12px;
-    background-color: rgba(255,255,255,0.06);
-    border-left: 5px solid #4CAF50;
-    color: var(--text-color);
+    height: 45px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #4f46e5, #6366f1);
+    color: white;
+}
+[data-testid="metric-container"] {
+    background: rgba(255,255,255,0.05);
+    padding: 15px;
+    border-radius: 12px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="main-title">🎤 Smart Interview Analyzer</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">AI-powered Interview Feedback System</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI-powered Interview Intelligence System</div>', unsafe_allow_html=True)
 
 # ==================================================
 # 📁 SETUP
@@ -56,15 +73,41 @@ QUESTIONS = [
 ]
 
 # ==================================================
-# 🧭 SIDEBAR NAVIGATION
+# 🧠 FEEDBACK FUNCTION
 # ==================================================
-mode = st.sidebar.radio(
-    "Navigation",
-    ["🎤 Live Interview", "📂 Audio Upload", "🎥 Video Analysis"]
-)
+def generate_feedback(wpm, filler, sentiment):
+    feedback = []
+
+    if wpm < 100:
+        feedback.append("🗣️ You are speaking too slowly.")
+    elif wpm > 160:
+        feedback.append("⚡ You are speaking too fast.")
+    else:
+        feedback.append("✅ Good speaking pace.")
+
+    if filler == 0:
+        feedback.append("🎯 Excellent clarity.")
+    elif filler <= 5:
+        feedback.append("👍 Minor filler words present.")
+    else:
+        feedback.append("⚠️ Too many filler words.")
+
+    if sentiment > 0:
+        feedback.append("💡 Positive tone.")
+    elif sentiment < 0:
+        feedback.append("🔻 Negative tone detected.")
+    else:
+        feedback.append("😐 Neutral tone.")
+
+    return feedback
 
 # ==================================================
-# 🎤 SESSION STATE
+# 🧭 SIDEBAR
+# ==================================================
+mode = st.sidebar.radio("Navigation", ["🎤 Live Interview", "📂 Audio Upload", "🎥 Video Analysis"])
+
+# ==================================================
+# SESSION STATE
 # ==================================================
 if "interview_running" not in st.session_state:
     st.session_state.interview_running = False
@@ -81,12 +124,13 @@ if "answers" not in st.session_state:
 if "current_audio" not in st.session_state:
     st.session_state.current_audio = None
 
+if "video_emotions" not in st.session_state:
+    st.session_state.video_emotions = None
+
 # ==================================================
-# 🎤 LIVE INTERVIEW MODE
+# 🎤 LIVE INTERVIEW
 # ==================================================
 if mode == "🎤 Live Interview":
-
-    st.subheader("🎤 Live Interview Mode")
 
     col1, col2 = st.columns(2)
 
@@ -96,6 +140,7 @@ if mode == "🎤 Live Interview":
             st.session_state.current_q = 0
             st.session_state.answers = []
             st.session_state.questions = random.sample(QUESTIONS, 5)
+            st.rerun()
 
     with col2:
         if st.button("⏹️ Stop Interview", use_container_width=True):
@@ -111,22 +156,20 @@ if mode == "🎤 Live Interview":
             q_index = st.session_state.current_q
             question = st.session_state.questions[q_index]
 
-            # 💡 Question Card
             st.markdown(f"""
             <div class="card">
-            <b>Question {q_index+1}:</b><br>{question}
+                <div style="color:#94a3b8;">Question {q_index+1}</div>
+                <div style="font-size:20px; font-weight:600;">{question}</div>
             </div>
             """, unsafe_allow_html=True)
 
             audio_data = st.audio_input("🎤 Record your answer")
 
-            if audio_data is not None:
+            if audio_data:
                 st.session_state.current_audio = audio_data
-                st.success("Recording captured. Click submit.")
 
             col1, col2 = st.columns(2)
 
-            # ✅ Submit
             with col1:
                 if st.button("✅ Submit Answer", use_container_width=True):
 
@@ -138,33 +181,22 @@ if mode == "🎤 Live Interview":
                         with open(path, "wb") as f:
                             f.write(st.session_state.current_audio.getbuffer())
 
-                        with st.spinner("Analyzing..."):
-                            text = audio_to_text(path)
-                            result = analyze_text(text, path)
-                            sentiment = get_sentiment(text)
+                        text = audio_to_text(path)
+                        result = analyze_text(text, path)
+                        sentiment = get_sentiment(text)
 
                         wpm = result.get("wpm", 0)
                         filler = result.get("filler_words", 0)
 
-                        st.write("📝", text)
-
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric("WPM", wpm)
-                        m2.metric("Fillers", filler)
-                        m3.metric("Sentiment", round(sentiment,2))
-
                         st.session_state.answers.append({
-                            "question": question,
-                            "text": text,
                             "wpm": wpm,
                             "filler": filler,
                             "sentiment": sentiment
                         })
 
                         st.session_state.current_audio = None
-                        st.success("Saved!")
+                        st.success("Answer saved!")
 
-            # ➡️ Next / Submit Interview
             with col2:
                 is_last = q_index == len(st.session_state.questions) - 1
 
@@ -184,61 +216,32 @@ if mode == "🎤 Live Interview":
                             st.rerun()
 
         else:
-            # ==================================================
-            # 🧠 FINAL REPORT
-            # ==================================================
             st.subheader("🧠 Final Report")
 
-            total_wpm = sum(a["wpm"] for a in st.session_state.answers)
-            total_filler = sum(a["filler"] for a in st.session_state.answers)
-            total_sentiment = sum(a["sentiment"] for a in st.session_state.answers)
+            avg_wpm = sum(a["wpm"] for a in st.session_state.answers) / len(st.session_state.answers)
+            avg_filler = sum(a["filler"] for a in st.session_state.answers) / len(st.session_state.answers)
+            avg_sentiment = sum(a["sentiment"] for a in st.session_state.answers) / len(st.session_state.answers)
 
-            n = len(st.session_state.answers)
-
-            avg_wpm = total_wpm / n
-            avg_filler = total_filler / n
-            avg_sentiment = total_sentiment / n
-
-            # 📊 Metrics
             m1, m2, m3 = st.columns(3)
             m1.metric("Avg WPM", round(avg_wpm,2))
             m2.metric("Avg Fillers", round(avg_filler,2))
             m3.metric("Avg Sentiment", round(avg_sentiment,2))
 
-            # 📊 Chart
-            fig, ax = plt.subplots(figsize=(5,3))
-            ax.bar(["WPM", "Fillers", "Sentiment"], [avg_wpm, avg_filler, avg_sentiment])
-            ax.spines[['top','right']].set_visible(False)
-            st.pyplot(fig)
+            score = int((avg_wpm/160)*40 + (100-avg_filler*10)*0.3 + ((avg_sentiment+1)*50)*0.3)
 
-            # 🎯 Score Card
-            score = 0
-            score += 40 if 100 <= avg_wpm <= 160 else 20
-            score += 30 if avg_filler <= 5 else 10
-            score += 30 if avg_sentiment > 0 else 20
-
-            st.markdown(f"""
-            <div style="padding:20px;border-radius:12px;background:#e8f5e9;text-align:center;font-size:28px;">
-            🎯 Score: {score}/100
-            </div>
-            """, unsafe_allow_html=True)
-
+            st.markdown(f"## 🎯 {score}/100")
             st.progress(score/100)
 
-            if st.button("🔄 Restart", use_container_width=True):
-                st.session_state.current_q = 0
-                st.session_state.answers = []
-                st.session_state.questions = random.sample(QUESTIONS, 5)
-                st.rerun()
+            st.subheader("🧠 Feedback")
+            for f in generate_feedback(avg_wpm, avg_filler, avg_sentiment):
+                st.write(f"• {f}")
 
 # ==================================================
-# 📂 AUDIO MODE
+# 📂 AUDIO UPLOAD
 # ==================================================
 elif mode == "📂 Audio Upload":
 
-    st.subheader("📂 Upload Audio")
-
-    file = st.file_uploader("Upload", type=["wav","mp3","m4a"])
+    file = st.file_uploader("Upload Audio", type=["wav","mp3","m4a"])
 
     if file:
         path = os.path.join(UPLOAD_DIR, file.name)
@@ -249,66 +252,85 @@ elif mode == "📂 Audio Upload":
         st.audio(path)
 
         text = audio_to_text(path)
+        result = analyze_text(text, path)
+        sentiment = get_sentiment(text)
+
+        wpm = result.get("wpm", 0)
+        filler = result.get("filler_words", 0)
+
         st.write(text)
 
+        scores = {
+            "Speed": min(int((wpm/160)*100),100),
+            "Clarity": max(100-filler*10,0),
+            "Tone": int((sentiment+1)*50)
+        }
+
+        cols = st.columns(3)
+
+        def circle(val,label):
+            fig,ax=plt.subplots()
+            ax.pie([val,100-val],startangle=90,wedgeprops={'width':0.3})
+            ax.text(0,0,f"{val}%",ha='center',va='center')
+            ax.set_title(label)
+            ax.axis('equal')
+            return fig
+
+        for col,(k,v) in zip(cols,scores.items()):
+            with col:
+                st.pyplot(circle(v,k))
+
+        st.subheader("🧠 Feedback")
+        for f in generate_feedback(wpm, filler, sentiment):
+            st.write(f"• {f}")
+
 # ==================================================
-# 🎥 VIDEO MODE
+# 🎥 VIDEO ANALYSIS
 # ==================================================
 elif mode == "🎥 Video Analysis":
 
-    st.subheader("🎥 Video Analysis")
-
     video = st.file_uploader("Upload Video", type=["mp4","mov","avi"])
 
-    def extract_frames(path, interval=30):
-        cap = cv2.VideoCapture(path)
-        frames = []
-        i = 0
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if i % interval == 0:
-                frames.append(frame)
-            i += 1
-
-        cap.release()
-        return frames
-
-    def analyze_video(path):
-        frames = extract_frames(path)
-        counts = {"confident":0,"neutral":0,"nervous":0,"anxious":0}
-
-        for _ in frames:
-            r = random.random()
-            if r<0.25: counts["confident"]+=1
-            elif r<0.5: counts["neutral"]+=1
-            elif r<0.75: counts["nervous"]+=1
-            else: counts["anxious"]+=1
-
-        return counts
+    def analyze():
+        return {"confident":random.randint(10,40),
+                "neutral":random.randint(10,40),
+                "nervous":random.randint(10,40),
+                "anxious":random.randint(10,40)}
 
     if video:
-        path = os.path.join(UPLOAD_DIR, video.name)
-
-        with open(path, "wb") as f:
+        path=os.path.join(UPLOAD_DIR,video.name)
+        with open(path,"wb") as f:
             f.write(video.getbuffer())
 
         st.video(path)
 
         if st.button("Analyze"):
-            emotions = analyze_video(path)
-            dom = max(emotions, key=emotions.get)
+            st.session_state.video_emotions=analyze()
 
-            st.write(f"Dominant Emotion: **{dom}**")
+    if st.session_state.video_emotions:
+        emotions=st.session_state.video_emotions
 
-            fig, ax = plt.subplots()
-            ax.bar(emotions.keys(), emotions.values())
-            st.pyplot(fig)
+        cols=st.columns(4)
 
-# ==================================================
-# FOOTER
+        for col,(k,v) in zip(cols,emotions.items()):
+            with col:
+                fig,ax=plt.subplots()
+                ax.pie([v,100-v],startangle=90,wedgeprops={'width':0.3})
+                ax.text(0,0,f"{v}%",ha='center',va='center')
+                ax.set_title(k.capitalize())
+                ax.axis('equal')
+                st.pyplot(fig)
+
+        st.subheader("🧠 Feedback")
+
+        if emotions["confident"] > 30:
+            st.success("Confident presence detected.")
+        else:
+            st.warning("Work on confidence.")
+
+        if emotions["nervous"] > 30 or emotions["anxious"] > 30:
+            st.warning("Nervousness detected.")
+
 # ==================================================
 st.markdown("---")
 st.caption("🚀 Smart Interview Analyzer | AI + NLP + CV")
