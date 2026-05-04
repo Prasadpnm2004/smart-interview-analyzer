@@ -1,9 +1,9 @@
 streamlit
-numpy==1.26.4
-pillow==10.4.0
-matplotlib==3.8.4
 SpeechRecognition
-pydub
+textblob
 opencv-python
-nltk
-deepface
+plotly
+audio-recorder-streamlit
+pydub
+soundfile
+numpy
